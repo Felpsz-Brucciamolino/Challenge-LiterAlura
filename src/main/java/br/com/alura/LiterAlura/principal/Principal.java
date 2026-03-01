@@ -42,8 +42,20 @@ public class Principal {
                     0 - Sair
                     """;
             System.out.println(menu);
-            opcao = Leitura.nextInt();
-            Leitura.nextLine();
+            System.out.print("Escolha uma opção:\n");
+
+            String entrada = Leitura.nextLine().trim();
+
+            try {
+                opcao = Integer.parseInt(entrada);
+            } catch (NumberFormatException e) {
+                System.out.println("Opção inválida: digite um número válido");
+                continue;
+            }
+            if (opcao < 0 || opcao > 6) {
+                System.out.println("Número inválido: escolha entre 0 e 6");
+                continue;
+            }
             switch (opcao) {
                 case 1:
                     buscarLivroPeloTitulo();
@@ -68,6 +80,7 @@ public class Principal {
                     break;
                 default:
                     System.out.println("Opção inválida");
+                    return;
 
             }
         }
@@ -83,6 +96,11 @@ public class Principal {
         Autor autor = autorRepository.findByNomeIgnoreCase(dadosAutor.nome())
                 .orElseGet(() -> autorRepository.save(new Autor(dadosAutor)));
         Livro livro = new Livro(dadosLivro, autor);
+            Optional<Livro> existente = repositorio.findByTituloIgnoreCaseAndAutor(dadosLivro.titulo(), autor);
+            if (existente.isPresent()) {
+                System.out.println("Esse livro já está salvo com esse autor");
+                return;
+            }
         repositorio.save(livro);
 
         System.out.println("✅ Livro salvo: " + livro.getTitulo() + " | Autor: " + autor.getNome());
@@ -93,13 +111,36 @@ public class Principal {
 
     private DadosLivro getDadosLivro() {
         System.out.println("Digite o nome do Livro para busca:");
-        var nomeLivro = Leitura.nextLine();
+        String nomeLivro = Leitura.nextLine().trim();
+        System.out.println("Em qual tradução? (digite o código ou o nome)");
+        Linguas.listarFormatado().forEach(System.out::println);
+
+        String entradaLingua = Leitura.nextLine().trim();
+
+        Linguas linguaEscolhida;
+        try {
+            linguaEscolhida = Linguas.fromAPI(entradaLingua.toLowerCase());
+        } catch (IllegalArgumentException e) {
+            linguaEscolhida = Linguas.fromInterface(entradaLingua);
+        } final Linguas linguaFinal = linguaEscolhida;
+
         String nomeLivroFormatado = URLEncoder.encode(nomeLivro, StandardCharsets.UTF_8);
-        var json = consumo.obterDados(ENDERECO + nomeLivroFormatado);
+
+        String url = ENDERECO
+                + nomeLivroFormatado
+                + "&languages=" + linguaEscolhida.getLinguaAPI();
+
+        var json = consumo.obterDados(url);
+
         TextoGutendex resposta = conversor.obterDados(json, TextoGutendex.class);
         return resposta.results().stream()
+                .filter(l -> l.linguas() != null &&
+                        l.linguas().stream()
+                                .anyMatch(lang -> lang.equalsIgnoreCase(linguaFinal.getLinguaAPI())))
                 .findFirst()
-                .orElseThrow(() -> new RuntimeException("Nenhum livro encontrado com o título \"" + nomeLivro+"\""));
+                .orElseThrow(() -> new RuntimeException(
+                        "Nenhum livro encontrado com o título \"" + nomeLivro + "\" no idioma " + linguaFinal.getLinguaAPI()
+                ));
     }
 
 
@@ -176,6 +217,5 @@ public class Principal {
         List<Livro> topLivros = repositorio.findTop10ByOrderByQntDownloadDesc();
         topLivros.forEach(System.out::println);
     }
-
 
 }
